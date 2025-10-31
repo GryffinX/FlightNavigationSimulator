@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Drone Navigation Simulator</title>
+    <title>Flight Navigation Simulator</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
     <style>
         #map {
@@ -435,7 +435,7 @@
         pathLayer = L.polyline(latLngPath, { color: 'blue', weight: 4 }).addTo(map);
     }
 
-    function resetPath() {code
+    function resetPath() {
         if (pathLayer) {
             map.removeLayer(pathLayer);
             pathLayer = null;
