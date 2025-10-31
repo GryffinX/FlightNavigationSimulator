@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Drone Navigation Simulator</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+    <style>
+        #map {
+            flex-grow: 1; /* fill the available space */
+            min-height: 400px;
+            width: 100%;
+            border-radius: 10px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+            margin-bottom: 20px;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: stretch;
+            width: 100vw;
+            height: 100vh;
+            background-color: #f8f9fa;
+            margin: 0;
+            padding: 20px;
+        }
+        h1 {
+            color: #333;
+            margin-bottom: 20px;
+            font-size: 2.5rem;
+            text-align: center;
+        }
+        #controls {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            margin-bottom: 20px;
+            gap: 10px;
+        }
+        button, select {
+            margin: 5px;
+            padding: 10px 20px;
+            font-size: 16px;
+            color: #fff;
+            background-color: #007bff;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.3s, transform 0.3s;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+        button:hover, select:hover {
+            background-color: #0056b3;
+            transform: scale(1.05);
+        }
+        button:active, select:active {
+            background-color: #003f7f;
+        }
+        .start-icon {
+            background-color: red;
+            width: 15px;
+            height: 15px;
+            border-radius: 50%;
+            display: inline-block;
+        }
+        .goal-icon {
+            background-color: green;
+            width: 15px;
+            height: 15px;
+            border-radius: 50%;
+            display: inline-block;
+        }
+        .grid-line {
+            stroke: #000;
+            stroke-opacity: 0.1;
+        }
+    </style>
+</head>
+<body>
+    <h1>Drone Navigation Simulator</h1>
+    <div id="controls">
+        <label for="from-city">From:</label>
+        <select id="from-city">
+            <option value="">Select a city</option>
+            <option value="0">Chennai</option>
+            <option value="1">Coimbatore</option>
+            <option value="2">Madurai</option>
+            <option value="3">Tiruchirappalli</option>
+            <option value="4">Salem</option>
+            <option value="5">Erode</option>
+            <option value="6">Tiruppur</option>
+            <option value="7">Vellore</option>
+            <option value="8">Thoothukudi</option>
+            <option value="9">Dindigul</option>
+        </select>
+        
+        <label for="to-city">To:</label>
+        <select id="to-city">
+            <option value="">Select a city</option>
+            <option value="0">Chennai</option>
+            <option value="1">Coimbatore</option>
+            <option value="2">Madurai</option>
+            <option value="3">Tiruchirappalli</option>
+            <option value="4">Salem</option>
+            <option value="5">Erode</option>
+            <option value="6">Tiruppur</option>
+            <option value="7">Vellore</option>
+            <option value="8">Thoothukudi</option>
+            <option value="9">Dindigul</option>
+        </select>
+    </div>
+    <div id="map"></div>
+    <div id="controls">
+        <button onclick="runAStar()">Run A*</button>
+        <button onclick="runBellmanFord()">Run Bellman-Ford</button>
+        <button onclick="runOptimized()">Run Optimized</button>
+        <button onclick="toggleAddObstacleMode()">Add Obstacles</button>
+        <button onclick="toggleGrid()">Show/Hide Grid</button>
+        <button onclick="saveObstacles()" id="save-obstacles" style="display: none;">Done</button>
+    </div>
+
+    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+    <script>
+        const map = L.map('map').setView([10.8505, 78.6931], 7);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+        }).addTo(map);
+
+        const cities = [
+            { name: "Chennai", coords: [13.0827, 80.2707] },
+            { name: "Coimbatore", coords: [11.0168, 76.9558] },
+            { name: "Madurai", coords: [9.9252, 78.1198] },
+            { name: "Tiruchirappalli", coords: [10.7905, 78.7047] },
+            { name: "Salem", coords: [11.6643, 78.1460] },
+            { name: "Erode", coords: [11.3410, 77.7172] },
+            { name: "Tiruppur", coords: [11.1085, 77.3411] },
+            { name: "Vellore", coords: [12.9165, 79.1325] },
+            { name: "Thoothukudi", coords: [8.7642, 78.1348] },
+            { name: "Dindigul", coords: [10.3673, 77.9803] },
+        ];
+
+        let startMarker = null;
+        let goalMarker = null;
+        let pathLayer = null;
+        let obstacleLayers = [];
+        let gridLines = [];
+        let addObstacleMode = false;
+        let showGrid = true;
+        const gridSize = 50; // Define a grid with 50x50 cells
+        const logicalGrid = Array.from({ length: gridSize }, () => Array(gridSize).fill(0));
+
+        function setMarkers() {
+            const fromIndex = document.getElementById('from-city').value;
+            const toIndex = document.getElementById('to-city').value;
+
+            if (fromIndex === "" || toIndex === "") {
+                alert('Please select both start and goal cities.');
+                return;
+            }
+
+            const fromCity = cities[fromIndex];
+            const toCity = cities[toIndex];
+
+            if (startMarker) { map.removeLayer(startMarker); }
+            if (goalMarker) { map.removeLayer(goalMarker); }
+            if (pathLayer) { map.removeLayer(pathLayer); }
+
+            startMarker = L.marker(fromCity.coords, { icon: L.divIcon({ className: 'start-icon' }) }).addTo(map);
+            goalMarker = L.marker(toCity.coords, { icon: L.divIcon({ className: 'goal-icon' }) }).addTo(map);
+
+            if (showGrid) drawGrid();
+        }
+
+        function toggleAddObstacleMode() {
+            addObstacleMode = !addObstacleMode;
+            if (addObstacleMode) {
+                map.on('click', handleMapClick);
+                document.getElementById('save-obstacles').style.display = 'inline-block';
+            } else {
+                map.off('click', handleMapClick);
+                document.getElementById('save-obstacles').style.display = 'none';
+            }
+        }
+
+        function saveObstacles() {
+            toggleAddObstacleMode();
+        }
+
+        function handleMapClick(e) {
+            if (addObstacleMode) {
+                const latLng = e.latlng;
+                const gridPos = latLngToGrid(latLng);
+                if (logicalGrid[gridPos[0]][gridPos[1]] === 0) {
+                    logicalGrid[gridPos[0]][gridPos[1]] = -1;
+                    drawObstacle(gridPos);
+                }
+            }
+        }
+
+        function drawGrid() {
+            const latLngBounds = map.getBounds();
+            const latDiff = latLngBounds.getNorth() - latLngBounds.getSouth();
+            const lngDiff = latLngBounds.getEast() - latLngBounds.getWest();
+            const latStep = latDiff / gridSize;
+            const lngStep = lngDiff / gridSize;
+
+            gridLines.forEach(line => map.removeLayer(line));
+            gridLines = [];
+
+            for (let i = 0; i <= gridSize; i++) {
+                const lat = latLngBounds.getSouth() + i * latStep;
+                const line = L.polyline([[lat, latLngBounds.getWest()], [lat, latLngBounds.getEast()]], { className: 'grid-line' }).addTo(map);
+                gridLines.push(line);
+            }
+
+            for (let j = 0; j <= gridSize; j++) {
+                const lng = latLngBounds.getWest() + j * lngStep;
+                const line = L.polyline([[latLngBounds.getSouth(), lng], [latLngBounds.getNorth(), lng]], { className: 'grid-line' }).addTo(map);
+                gridLines.push(line);
+            }
+        }
+
+        function toggleGrid() {
+            showGrid = !showGrid;
+            if (showGrid) {
+                drawGrid();
+            } else {
+                gridLines.forEach(line => map.removeLayer(line));
+            }
+        }
+
+        function drawObstacle(gridPos) {
+            const latLngBounds = map.getBounds();
+            const latDiff = latLngBounds.getNorth() - latLngBounds.getSouth();
+            const lngDiff = latLngBounds.getEast() - latLngBounds.getWest();
+            const latStep = latDiff / gridSize;
+            const lngStep = lngDiff / gridSize;
+
+            const latStart = latLngBounds.getSouth() + gridPos[0] * latStep;
+            const lngStart = latLngBounds.getWest() + gridPos[1] * lngStep;
+            const latEnd = latStart + latStep;
+            const lngEnd = lngStart + lngStep;
+
+            const rectangle = L.rectangle([[latStart, lngStart], [latEnd, lngEnd]], {
+                color: "#ff0000",
+                weight: 1,
+                fillOpacity: 0.4
+            }).addTo(map);
+            obstacleLayers.push(rectangle);
+        }
+
+        function heuristic(a, b) {
+            return Math.abs(a[0] - b[0]) + Math.abs(a[1] - b[1]);
+        }
+
+        function getNeighbors(x, y, allowDiagonal = false) {
+            const directions = allowDiagonal ? [[-1, 0], [1, 0], [0, -1], [0, 1], [-1, -1], [-1, 1], [1, -1], [1, 1]] : [[-1, 0], [1, 0], [0, -1], [0, 1]];
+            const neighbors = [];
+            for (const [dx, dy] of directions) {
+                const nx = x + dx;
+                const ny = y + dy;
+                if (nx >= 0 && nx < gridSize && ny >= 0 && ny < gridSize && logicalGrid[nx][ny] !== -1) {
+                    neighbors.push([nx, ny]);
+                }
+            }
+            return neighbors;
+        }
+
+        function runAStar() {
+            resetPath();
+            setMarkers();
+            const fromIndex = document.getElementById('from-city').value;
+            const toIndex = document.getElementById('to-city').value;
+            if (fromIndex === "" || toIndex === "") {
+                alert('Please select both start and goal cities.');
+                return;
+            }
+
+            // Check if there are any obstacles
+            const hasObstacles = obstacleLayers.length > 0;
+            if (hasObstacles) {
+                alert('Obstacles detected. Use Bellman-Ford instead of A* due to potential negative edges.');
+                return;
+            }
+
+            const start = cities[fromIndex].coords;
+            const goal = cities[toIndex].coords;
+            const startGridPos = latLngToGrid({ lat: start[0], lng: start[1] });
+            const goalGridPos = latLngToGrid({ lat: goal[0], lng: goal[1] });
+
+            const openSet = [[...startGridPos]];
+            const cameFrom = {};
+            const gScore = Array.from({ length: gridSize }, () => Array(gridSize).fill(Infinity));
+            gScore[startGridPos[0]][startGridPos[1]] = 0;
+            const fScore = Array.from({ length: gridSize }, () => Array(gridSize).fill(Infinity));
+            fScore[startGridPos[0]][startGridPos[1]] = heuristic(startGridPos, goalGridPos);
+
+            while (openSet.length > 0) {
+                openSet.sort((a, b) => fScore[a[0]][a[1]] - fScore[b[0]][b[1]]);
+                const current = openSet.shift();
+                if (current[0] === goalGridPos[0] && current[1] === goalGridPos[1]) {
+                    reconstructPath(cameFrom, current, start, goal);
+                    return;
+                }
+                for (const neighbor of getNeighbors(current[0], current[1])) {
+                    const tentativeGScore = gScore[current[0]][current[1]] + 1;
+                    if (tentativeGScore < gScore[neighbor[0]][neighbor[1]]) {
+                        cameFrom[`${neighbor[0]},${neighbor[1]}`] = current;
+                        gScore[neighbor[0]][neighbor[1]] = tentativeGScore;
+                        fScore[neighbor[0]][neighbor[1]] = tentativeGScore + heuristic(neighbor, goalGridPos);
+                        if (!openSet.some(n => n[0] === neighbor[0] && n[1] === neighbor[1])) {
+                            openSet.push(neighbor);
+                        }
+                    }
+                }
+            }
+            alert('No path found with A*');
+        }
+
+        function runBellmanFord() {
+            resetPath();
+            setMarkers();
+            const fromIndex = document.getElementById('from-city').value;
+            const toIndex = document.getElementById('to-city').value;
+            if (fromIndex === "" || toIndex === "") {
+                alert('Please select both start and goal cities.');
+                return;
+            }
+
+            const start = cities[fromIndex].coords;
+            const goal = cities[toIndex].coords;
+            const startGridPos = latLngToGrid({ lat: start[0], lng: start[1] });
+            const goalGridPos = latLngToGrid({ lat: goal[0], lng: goal[1] });
+
+            const distance = Array.from({ length: gridSize }, () => Array(gridSize).fill(Infinity));
+            distance[startGridPos[0]][startGridPos[1]] = 0;
+            const predecessor = {};
+
+            for (let k = 0; k < gridSize * gridSize - 1; k++) {
+                for (let x = 0; x < gridSize; x++) {
+                    for (let y = 0; y < gridSize; y++) {
+                        if (logicalGrid[x][y] === -1) continue;
+                        for (const neighbor of getNeighbors(x, y)) {
+                            const nx = neighbor[0];
+                            const ny = neighbor[1];
+                            const newDist = distance[x][y] + 1;
+                            if (newDist < distance[nx][ny]) {
+                                distance[nx][ny] = newDist;
+                                predecessor[`${nx},${ny}`] = [x, y];
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (distance[goalGridPos[0]][goalGridPos[1]] === Infinity) {
+                alert('No path found with Bellman-Ford');
+            } else {
+                reconstructPath(predecessor, goalGridPos, start, goal);
+            }
+        }
+
+        function runOptimized() {
+            resetPath();
+            setMarkers();
+            const fromIndex = document.getElementById('from-city').value;
+            const toIndex = document.getElementById('to-city').value;
+            if (fromIndex === "" || toIndex === "") {
+                alert('Please select both start and goal cities.');
+                return;
+            }
+
+            const start = cities[fromIndex].coords;
+            const goal = cities[toIndex].coords;
+            const startGridPos = latLngToGrid({ lat: start[0], lng: start[1] });
+            const goalGridPos = latLngToGrid({ lat: goal[0], lng: goal[1] });
+
+            const openSet = [[...startGridPos]];
+            const cameFrom = {};
+            const gScore = Array.from({ length: gridSize }, () => Array(gridSize).fill(Infinity));
+            gScore[startGridPos[0]][startGridPos[1]] = 0;
+            const fScore = Array.from({ length: gridSize }, () => Array(gridSize).fill(Infinity));
+            fScore[startGridPos[0]][startGridPos[1]] = heuristic(startGridPos, goalGridPos);
+
+            while (openSet.length > 0) {
+                openSet.sort((a, b) => fScore[a[0]][a[1]] - fScore[b[0]][b[1]]);
+                const current = openSet.shift();
+                if (current[0] === goalGridPos[0] && current[1] === goalGridPos[1]) {
+                    reconstructPath(cameFrom, current, start, goal);
+                    return;
+                }
+                for (const neighbor of getNeighbors(current[0], current[1], true)) {
+    const tentativeGScore = gScore[current[0]][current[1]] + 
+        (current[0] !== neighbor[0] && current[1] !== neighbor[1] ? Math.SQRT2 : 1);
+
+    if (tentativeGScore < gScore[neighbor[0]][neighbor[1]]) {
+        cameFrom[`${neighbor[0]},${neighbor[1]}`] = current;
+        gScore[neighbor[0]][neighbor[1]] = tentativeGScore;
+        fScore[neighbor[0]][neighbor[1]] = tentativeGScore + heuristic(neighbor, goalGridPos);
+
+        if (!openSet.some(n => n[0] === neighbor[0] && n[1] === neighbor[1])) {
+            openSet.push(neighbor);
+        }
+    }
+}
+            }
+        }
+
+    function reconstructPath(cameFrom, current, start, goal) {
+        const path = [];
+        while (cameFrom[`${current[0]},${current[1]}`]) {
+            path.push(current);
+            current = cameFrom[`${current[0]},${current[1]}`];
+        }
+        path.push(current);
+        path.reverse();
+
+        const latLngBounds = map.getBounds();
+        const latDiff = latLngBounds.getNorth() - latLngBounds.getSouth();
+        const lngDiff = latLngBounds.getEast() - latLngBounds.getWest();
+        const latStep = latDiff / gridSize;
+        const lngStep = lngDiff / gridSize;
+
+        const latLngPath = path.map(pos => {
+            const latStart = latLngBounds.getSouth() + pos[0] * latStep + latStep / 2;
+            const lngStart = latLngBounds.getWest() + pos[1] * lngStep + lngStep / 2;
+            return [latStart, lngStart];
+        });
+        latLngPath.unshift(start);
+        latLngPath.push(goal);
+
+        if (pathLayer) { map.removeLayer(pathLayer); }
+        pathLayer = L.polyline(latLngPath, { color: 'blue', weight: 4 }).addTo(map);
+    }
+
+    function resetPath() {
+        if (pathLayer) {
+            map.removeLayer(pathLayer);
+            pathLayer = null;
+        }
+    }
+
+    function latLngToGrid(latLng) {
+        const latLngBounds = map.getBounds();
+        const latDiff = latLngBounds.getNorth() - latLngBounds.getSouth();
+        const lngDiff = latLngBounds.getEast() - latLngBounds.getWest();
+        const latStep = latDiff / gridSize;
+        const lngStep = lngDiff / gridSize;
+
+        const x = Math.floor((latLng.lat - latLngBounds.getSouth()) / latStep);
+        const y = Math.floor((latLng.lng - latLngBounds.getWest()) / lngStep);
+        return [x, y];
+    }
+</script>
+</body>
+</html>
