@@ -7,11 +7,10 @@ You can also add obstacles on the map grid and see how algorithms navigate aroun
 ---
 
 ## 🌍 Live Demo
-(If deployed on Vercel/GitHub Pages, add your link here)
 
-bash ``` 
+ ``` 
     https://flight-navigation-simulator.vercel.app
-    ```
+ ```
     
 ---
 
