@@ -11,16 +11,7 @@ You can also add obstacles on the map grid and see how algorithms navigate aroun
  ``` 
     https://flight-navigation-simulator.vercel.app
  ```
-    
----
-
-## 📸 Preview
-
-![Flight Navigation Simulator Screenshot](screenshot.png)
-
-*(Add an image of your map interface if possible)*
-
----
+   
 
 ## 🚀 Features
 
